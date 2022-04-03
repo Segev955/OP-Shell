@@ -3,19 +3,13 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/wait.h>
-//#include <winsock2.h>
-//#include <ws2tcpip.h>
 
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
-#define SERVER_PORT 5060
-#define SERVER_IP_ADDRESS "127.0.0.1"
+#include <unistd.h>
+#include "shell.h"
 
 int checkSUB(char e[], char s[]) {
     if (strlen(s) < strlen(e))
@@ -29,6 +23,7 @@ int checkSUB(char e[], char s[]) {
 
 int printECHO(char s[], int n) {
     char c[1024];
+    memset(c, 0, sizeof(c));
     if (n >= strlen(s))
         return 0;
     for (int i = n; i < strlen(s); ++i) {
@@ -54,67 +49,17 @@ int changeDIR(char s[], int n) {
     return 1;
 }
 
-int openSocket() {
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == -1) {
-        printf("Could not create socket : %d", errno);
-    } else
-        printf("Socket open\n");
-    struct sockaddr_in serverAddress;
-    memset(&serverAddress, 0, sizeof(serverAddress));
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(SERVER_PORT);
-    int rval = inet_pton(AF_INET, (const char *) SERVER_IP_ADDRESS, &serverAddress.sin_addr);
-    if (rval <= 0) {
-        printf("inet pton failed");
-        return -1;
-    }
-    // connect
-    printf("connecting...\n");
-    int c = connect(sock, (struct sockaddr *) &serverAddress, sizeof(serverAddress));
-    if (c == -1) {
-        perror("connect failed");
-        close(sock);
-        return -1;
-    }
-    char msg[1024];
-    int finish = 0;
-    do {
-        bzero(msg, 1024);
-        for (int i = 0; i < 1024; i++) {
-            if (msg[i - 1] == '\n' || msg[i - 1] == '\t') {
-                msg[i] = '\0';
-                break;
-            }
-            scanf("%c", &msg[i]);
-        }
-        if (checkSUB("LOCAL ", msg) || checkSUB("LOCAL\n", msg)) {
-            finish = 1;
-            bzero(msg, 1024);
-            strcpy(msg, "Good Bye");
-            int se = send(sock, msg, strlen(msg), 0);
-        } else {
-            int se = send(sock, msg, strlen(msg), 0);
-            if (se <= 0) {
-                printf("failed with error code : %d", errno);
-            } else
-                printf("Message sent\nSend new message or type 'LOCAL' to disconnect\n");
-        }
-    } while (!finish);
-    close(sock);
-    printf("Socket closed");
-    return 1;
-}
-
 int main() {
     char c[256];
     char s[1024];
     while (1) {
 //        printf("yes master?");
+
         if (getcwd(c, sizeof(c)) == NULL)
             perror("getcwd error");
         else
             printf("\n%s>", c);
+        memset(s, 0, sizeof(s));
         for (int i = 0; i < 1024; i++) {
             if (s[i - 1] == '\n' || s[i - 1] == '\t') {
                 s[i] = '\0';
@@ -128,15 +73,21 @@ int main() {
         //Exit
         if (checkSUB("EXIT ", s) || checkSUB("EXIT\n", s) || checkSUB("exit\n", s) || checkSUB("exit ", s)) {
             exit(1);
-            //Write after 'ECHO'
-        } else if (checkSUB("ECHO ", s) || checkSUB("echo ", s)) {
+        } //Write after 'ECHO'
+        else if (checkSUB("ECHO ", s) || checkSUB("echo ", s)) {
             printECHO(s, 5);
-            //connect to server
-        } else if (checkSUB("TCP PORT", s) || checkSUB("TCP PORT ", s) || checkSUB("tcp port", s) ||
-                   checkSUB("tcp port ", s)) {
+        }//connect to server
+        else if (checkSUB("TCP PORT", s) || checkSUB("TCP PORT ", s) || checkSUB("tcp port", s) ||
+                 checkSUB("tcp port ", s)) {
             openSocket();
-            //file list
-        } else if (checkSUB("DIR", s) || checkSUB("DIR ", s)) {
+            dup2(1, 555);
+            dup2(sock, 1);
+        }//LOCAL
+        else if (checkSUB("LOCAL ", s) || checkSUB("LOCAL\n", s)) {
+            close(sock);
+            dup2(555, 1);
+        }//file list
+        else if (checkSUB("DIR", s) || checkSUB("DIR ", s)) {
             struct dirent *de;
             DIR *dir = opendir(".");
             if (dir == NULL)  // opendir returns NULL if couldn't open directory
@@ -150,13 +101,15 @@ int main() {
 
                 closedir(dir);
             }
-            //change direction
-        } else if (checkSUB("cd ", s) || checkSUB("CD ", s)) {
+        }//change direction
+        else if (checkSUB("cd ", s) || checkSUB("CD ", s)) {
             changeDIR(s, 3); // chdir - system call
-            //copy file
-        } else if (checkSUB("COPY ", s) || checkSUB("copy ", s)) {
-            char src[20], dest[20];
+
+        }//copy file - COPY {filename} {dest}
+        else if (checkSUB("COPY ", s) || checkSUB("copy ", s)) {
+            char src[20], dest[20], rtow;
             int x = 0;
+            int fr;
             for (int i = 5; i < strlen(s); ++i) {
                 if (s[i] == ' ') {
                     src[i - 5] = '\0';
@@ -174,23 +127,29 @@ int main() {
             }
             FILE *source, *target;
             int ch;
-            strcat(c, "\\");
+            strcat(c, "/");
             strcat(c, src);
             int size = 0;
             source = fopen(c, "r");
-            fread(&size, sizeof(size), 1, source);
+            if (source == NULL) {
+                printf("open 'source' error");
+                exit(1);
+            }
             getcwd(c, sizeof(c));
-            strcat(c, "\\");
+            strcat(c, "/");
             strcat(c, dest);
-            strcat(c, "\\");
+            strcat(c, "/");
             strcat(c, src);
-            target = fopen(c, "w"); // library function
-            while ((ch = fgetc(source)) != EOF) // library function
-                fputc(ch, target); // library function
+            target = fopen(c, "w+"); // library function
+            if (target == NULL) {
+                printf("write to 'target' error");
+                exit(1);
+            }
+            while ((ch = fscanf(source,"%c",&rtow)) != EOF) // library function
+                fprintf(target,"%c",rtow); // library function
             fclose(source);
             fclose(target);
-        }
-            //Delete file
+        }//Delete file
         else if (checkSUB("DELETE ", s) || checkSUB("delete ", s)) {
             char f[20];
             for (int i = 7; i < strlen(s); ++i) {
@@ -203,17 +162,18 @@ int main() {
             printf("filename: '%s'\n", f);
             if (unlink(f) != 0) // system call
                 perror("unlink error");
-        } else {
+        }// fork, execlp, wait
+        else {
 //            system(s);
             int fo = fork();
             if (fo < 0) //error
                 return 1;
             else if (fo == 0) { //child
                 char bin[256] = "/bin/";
-                strcat(bin, c);
-                execlp(bin, c, NULL);
+                strcat(bin, s);
+                execlp(bin, s, NULL);
             } else {
-                printf("Waiting for child\n");
+                printf("New child\n");
                 wait(NULL);
                 printf("Child finish\n");
             }

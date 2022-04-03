@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <time.h>
+#include "shell.h"
 
 #define SERVER_PORT 5060
 
@@ -24,7 +25,9 @@ int checkSUB(char e[], char s[]) {
     return 1;
 }
 
+
 int main(int argc, char const *argv[]) {
+
     int listeningSocket = -1;
     struct sockaddr_in serverAddress, clientAddress;
     int reuse = 1;
@@ -77,17 +80,23 @@ int main(int argc, char const *argv[]) {
     while (1) {
         bzero(buffer,1024);
         int re = recv(clientSocket, buffer, sizeof(buffer), 0);
-        if (re <= 0) {
+        if (re == 0) {
+            printf("\nSocket close\n");
+            close(clientSocket);
+            break;
+        }
+        else if (re < 0) {
             printf("\nFailed receive message");
             close(clientSocket);
             break;
         } else {
-            printf("Massage from client: %s", buffer);
-            if (checkSUB(go, buffer)) {
-                printf("Socket close\n");
-                close(clientSocket);
-                break;
-            }
+//            printf("Message from client: %s", buffer);
+            printf("%s", buffer);
+//            if (checkSUB(go, buffer)) {
+//                printf("\nSocket close");
+//                close(clientSocket);
+//                break;
+//            }
         }
     }
     return 0;
