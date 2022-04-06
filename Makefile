@@ -1,10 +1,10 @@
 all: main server
 
 main: main.o server.o client.o
-	gcc main.o client.o -o main
+	gcc -o main main.o client.o
 	
 server: server.o
-	gcc server.o -o server
+	gcc -o server server.o
 	
 main.o: shell.h main.c 
 	gcc -c main.c 
