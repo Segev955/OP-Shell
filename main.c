@@ -120,7 +120,7 @@ int main() {
             if (sock > 0) {
                 close(sock);
                 dup2(555, 1);
-                printf("Back to shell\n");
+                printf("in shell\n");
             } else
                 printf("not connected");
         }//file list
@@ -133,8 +133,10 @@ int main() {
                 closedir(dir);
                 continue;
             } else {
-                while ((de = readdir(dir)) != NULL)
-                    printf("%s\n", de->d_name);
+                while ((de = readdir(dir)) != NULL) {
+                    if (de->d_name[0] != '.')
+                        printf("%s\n", de->d_name);
+                }
                 closedir(dir);
             }
         }//change direction
@@ -166,7 +168,7 @@ int main() {
         else if (checkSUB("DELETE ", s) || checkSUB("delete ", s)) {
             char f[20];
             for (int i = 7; i < strlen(s); ++i) {
-                if (s[i] == ' ' || s[i] == '\n' || s[i] == '\t') {
+                if (s[i] == '\n' || s[i] == '\t') {
                     f[i - 7] = '\0';
                     break;
                 }
